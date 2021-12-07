@@ -1,0 +1,20 @@
+{
+    "name": "xiaoxuan-lang-ir-interpreter",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "test": "node ./test/test-all.js"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/hemashushu/xiaoxuan-lang-ir-interpreter-js.git"
+    },
+    "author": "",
+    "license": "Apache-2.0",
+    "bugs": {
+        "url": "https://github.com/hemashushu/xiaoxuan-lang-ir-interpreter-js/issues"
+    },
+    "homepage": "https://github.com/hemashushu/xiaoxuan-lang-ir-interpreter-js#readme"
+}
