@@ -26,7 +26,6 @@ const JSON_QUOTE = '"';
 // * 圆括号（Round brackets, paren/parentheses）
 // * 尖括号（Angle brackets, chevrons ）
 
-const JSON_WHITESPACE = [' ', '\t', '\b', '\n', '\r'];
 const JSON_KEYWORDS = [
     JSON_COMMA,
     JSON_COLON,
@@ -35,6 +34,8 @@ const JSON_KEYWORDS = [
     JSON_LEFT_BRACE,
     JSON_RIGHT_BRACE
 ];
+
+const JSON_WHITESPACE = [' ', '\t', '\n', '\r'];
 
 const JSON_FALSE = 'false';
 const JSON_TRUE = 'true';
