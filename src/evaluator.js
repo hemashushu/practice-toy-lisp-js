@@ -50,9 +50,37 @@ class Evaluator {
         /**
          * 基本函数
          *
+         * 求值
          * - val 读取字面量或者标识符的值
+         *
+         * 算术运算
          * - add 加
-         * - mul 减
+         * - sub 减
+         * - mul 乘
+         * - div 除，返回 f64/f32
+         * - rem 余
+         *
+         * 比较运算
+         * - eq 等于，返回 0/-1，
+         * - gt 大于，返回 0/-1
+         * - gte 大于等于，返回 0/-1
+         * - lt 小于，返回 0/-1
+         * - lte 小于等于，返回 0/-1
+         *
+         * 逻辑运算
+         * 约定 0 为 false，-1 为 true，内部使用位运算实现。
+         * - and 逻辑与，返回 0/-1
+         * - or 逻辑或，返回 0/-1
+         * - not 逻辑非，返回 0/-1
+         *
+         * 位运算
+         * - bit_and 位与
+         * - bit_or 位或
+         * - bit_xor 位异或
+         * - bit_not 位非
+         * - lshift 位左移
+         * - rshift 位右移
+         * - lrshift 逻辑位右移
          */
         if (op === 'val') {
             if (list.length !== 2) {
@@ -72,6 +100,15 @@ class Evaluator {
             return this.eval(list[1], context) + this.eval(list[2], context);
         }
 
+        if (op === 'sub') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'sub', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) - this.eval(list[2], context);
+        }
+
         if (op === 'mul') {
             if (list.length !== 3) {
                 throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
@@ -79,6 +116,159 @@ class Evaluator {
                     `Incorrect number of parameters for function: "${op}"`);
             }
             return this.eval(list[1], context) * this.eval(list[2], context);
+        }
+
+        if (op === 'div') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'div', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) / this.eval(list[2], context);
+        }
+
+        if (op === 'rem') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'rem', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) % this.eval(list[2], context);
+        }
+
+        if (op === 'eq') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'eq', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) === this.eval(list[2], context) ? -1 : 0;
+        }
+
+        if (op === 'gt') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'gt', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) > this.eval(list[2], context) ? -1 : 0;
+        }
+
+        if (op === 'gte') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'gte', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) >= this.eval(list[2], context) ? -1 : 0;
+        }
+
+        if (op === 'lt') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'lt', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) < this.eval(list[2], context) ? -1 : 0;
+        }
+
+        if (op === 'lte') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'lte', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) <= this.eval(list[2], context) ? -1 : 0;
+        }
+
+        if (op === 'and') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'and', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return (this.eval(list[1], context) & this.eval(list[2], context)) !== 0 ? -1 : 0;
+        }
+
+        if (op === 'or') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'or', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return (this.eval(list[1], context) | this.eval(list[2], context)) === 0 ? 0 : -1;
+        }
+
+        if (op === 'not') {
+            if (list.length !== 2) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'not', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) === 0 ? -1 : 0;
+        }
+
+        if (op === 'bit_and') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'bit_and', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) & this.eval(list[2], context);
+        }
+
+        if (op === 'bit_or') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'bit_or', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) | this.eval(list[2], context);
+        }
+
+        if (op === 'bit_xor') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'bit_xor', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) ^ this.eval(list[2], context);
+        }
+
+        if (op === 'bit_not') {
+            if (list.length !== 2) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'bit_not', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return ~this.eval(list[1], context);
+        }
+
+        if (op === 'lshift') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'lshift', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) << this.eval(list[2], context);
+        }
+
+        if (op === 'rshift') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'rshift', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) >> this.eval(list[2], context);
+        }
+
+        if (op === 'lrshift') {
+            if (list.length !== 3) {
+                throw new SyntaxError('INCORRECT_NUMBER_OF_PARAMETERS',
+                    { name: 'lrshift', actual: list.length, expect: 3 },
+                    `Incorrect number of parameters for function: "${op}"`);
+            }
+            return this.eval(list[1], context) >>> this.eval(list[2], context);
         }
 
         /**
