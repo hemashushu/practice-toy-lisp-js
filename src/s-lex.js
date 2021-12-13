@@ -12,7 +12,7 @@ const S_RIGHT_PAREN = ')';
 
 const S_KEYWORDS = [
     S_LEFT_PAREN,
-    S_RIGHT_PAREN
+    S_RIGHT_PAREN,
 ];
 
 const S_WHITESPACE = [' ', '\t', '\n', '\r'];

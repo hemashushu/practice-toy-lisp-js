@@ -32,7 +32,7 @@ const JSON_KEYWORDS = [
     JSON_LEFT_BRACKET,
     JSON_RIGHT_BRACKET,
     JSON_LEFT_BRACE,
-    JSON_RIGHT_BRACE
+    JSON_RIGHT_BRACE,
 ];
 
 const JSON_WHITESPACE = [' ', '\t', '\n', '\r'];
