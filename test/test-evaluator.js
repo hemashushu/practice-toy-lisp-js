@@ -17,7 +17,9 @@ class TestEvaluator {
         assert.equal(evaluator.fromString('(mul 2 3)'), 6);
         assert.equal(evaluator.fromString('(div 6 2)'), 3);
         assert.equal(evaluator.fromString('(div 1 2)'), 0.5);
+        assert.equal(evaluator.fromString('(div -6 2)'), -3);
         assert.equal(evaluator.fromString('(rem 10 4)'), 2);
+        assert.equal(evaluator.fromString('(rem -10 4)'), -2);
     }
 
     static testComparisonOperatorFunction() {
@@ -36,20 +38,6 @@ class TestEvaluator {
         assert.equal(evaluator.fromString('(lte 2 3)'), -1);
     }
 
-    static testLogicalOperatorFunction() {
-        let evaluator = new Evaluator();
-        assert.equal(evaluator.fromString('(and 0 0)'), 0);
-        assert.equal(evaluator.fromString('(and 0 -1)'), 0);
-        assert.equal(evaluator.fromString('(and -1 -1)'), -1);
-
-        assert.equal(evaluator.fromString('(or 0 0)'), 0);
-        assert.equal(evaluator.fromString('(or 0 -1)'), -1);
-        assert.equal(evaluator.fromString('(or -1 -1)'), -1);
-
-        assert.equal(evaluator.fromString('(not 0)'), -1);
-        assert.equal(evaluator.fromString('(not -1)'), 0);
-    }
-
     static testBitwiseOperatorFunction() {
         let evaluator = new Evaluator();
         assert.equal(evaluator.fromString('(bit_and 3 5)'), 3 & 5);
@@ -64,14 +52,45 @@ class TestEvaluator {
         assert.equal(evaluator.fromString('(bit_not 3)'), ~3);
         assert.equal(evaluator.fromString('(bit_not -7)'), ~(-7));
 
-        assert.equal(evaluator.fromString('(lshift 3 5)'), 3 << 5);
-        assert.equal(evaluator.fromString('(lshift -3 5)'), -3 << 5);
+        assert.equal(evaluator.fromString('(shift_left 3 5)'), 3 << 5);
+        assert.equal(evaluator.fromString('(shift_left -3 5)'), -3 << 5);
 
-        assert.equal(evaluator.fromString('(rshift 3 5)'), 3 >> 5);
-        assert.equal(evaluator.fromString('(rshift -3 5)'), -3 >> 5);
+        assert.equal(evaluator.fromString('(shift_right 3 5)'), 3 >> 5);
+        assert.equal(evaluator.fromString('(shift_right -3 5)'), -3 >> 5);
 
-        assert.equal(evaluator.fromString('(lrshift 3 5)'), 3 >>> 5);
-        assert.equal(evaluator.fromString('(lrshift -3 5)'), -3 >>> 5);
+        assert.equal(evaluator.fromString('(shift_right_u 3 5)'), 3 >>> 5);
+        assert.equal(evaluator.fromString('(shift_right_u -3 5)'), -3 >>> 5);
+    }
+
+    static testLogicalOperatorFunction() {
+        let evaluator = new Evaluator();
+        assert.equal(evaluator.fromString('(and 0 0)'), 0);
+        assert.equal(evaluator.fromString('(and 0 -1)'), 0);
+        assert.equal(evaluator.fromString('(and -1 -1)'), -1);
+
+        assert.equal(evaluator.fromString('(or 0 0)'), 0);
+        assert.equal(evaluator.fromString('(or 0 -1)'), -1);
+        assert.equal(evaluator.fromString('(or -1 -1)'), -1);
+
+        assert.equal(evaluator.fromString('(not 0)'), -1);
+        assert.equal(evaluator.fromString('(not -1)'), 0);
+    }
+
+    static testMathFunction() {
+        let evaluator = new Evaluator();
+        assert.equal(evaluator.fromString('(abs 2.7)'), 2.7);
+        assert.equal(evaluator.fromString('(abs -2.7)'), 2.7);
+        assert.equal(evaluator.fromString('(neg 2.7)'), -2.7);
+        assert.equal(evaluator.fromString('(neg -2.7)'), 2.7);
+        assert.equal(evaluator.fromString('(ceil 2.7)'), 3);
+        assert.equal(evaluator.fromString('(ceil -2.7)'), -2);
+        assert.equal(evaluator.fromString('(floor 2.7)'), 2);
+        assert.equal(evaluator.fromString('(floor -2.7)'), -3);
+        assert.equal(evaluator.fromString('(trunc 2.7)'), 2);
+        assert.equal(evaluator.fromString('(trunc -2.7)'), -2);
+        assert.equal(evaluator.fromString('(round 2.7)'), 3);
+        assert.equal(evaluator.fromString('(round -2.7)'), -3);
+        assert.equal(evaluator.fromString('(sqrt 9.0)'), 3.0);
     }
 
     static testFunction() {
@@ -172,21 +191,34 @@ class TestEvaluator {
         let evaluator = new Evaluator();
 
         assert.equal(evaluator.fromString(
-            `(if (gt 2 1) (val 100) (val 200))`
-        ), 100);
+            `(if (gt 2 1) (val 10) (val 20))`
+        ), 10);
 
+        assert.equal(evaluator.fromString(
+            `(begin
+                (var a 61)
+                (if (gt a 90)
+                    (val 2)
+                    (if (gt a 60)
+                        (val 1)
+                        (val 0)
+                    )
+                )
+             )`
+        ), 1)
     }
 
     static testEvaluator() {
         TestEvaluator.testValFunction();
         TestEvaluator.testArithmeticOperatorFunction();
         TestEvaluator.testComparisonOperatorFunction();
-        TestEvaluator.testLogicalOperatorFunction();
         TestEvaluator.testBitwiseOperatorFunction();
+        TestEvaluator.testLogicalOperatorFunction();
+        TestEvaluator.testMathFunction();
         TestEvaluator.testFunction();
         TestEvaluator.testVariable();
         TestEvaluator.testBlock();
-        // TestEvaluator.testConditionControlFlow();
+        TestEvaluator.testConditionControlFlow();
         console.log('Evaluator passed');
     }
 }
