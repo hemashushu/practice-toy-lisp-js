@@ -93,32 +93,6 @@ class TestEvaluator {
         assert.equal(evaluator.fromString('(sqrt 9.0)'), 3.0);
     }
 
-    static testFunction() {
-        let evaluator = new Evaluator();
-
-        // cascaded function
-        assert.equal(evaluator.fromString('(mul 2 (add 3 4))'), 14);
-
-        // incorrent number of parameters
-        try {
-            evaluator.fromString('(add 1)');
-        } catch (err) {
-            assert(err instanceof SyntaxError);
-            assert.equal(err.code, 'INCORRECT_NUMBER_OF_PARAMETERS');
-            assert.deepEqual(err.data, { name: 'add', actual: 2, expect: 3 });
-        }
-
-        // call non-exist function
-        try {
-            evaluator.fromString('(noThisFunction)');
-        } catch (err) {
-            assert(err instanceof EvalError);
-            assert.equal(err.code, 'FUNC_NOT_FOUND');
-            assert.deepEqual(err.data, { name: 'noThisFunction' });
-        }
-
-    }
-
     static testVariable() {
         let evaluator = new Evaluator();
 
@@ -141,6 +115,42 @@ class TestEvaluator {
             assert(err instanceof ContextError);
             assert.equal(err.code, 'ID_NOT_FOUND');
             assert.deepEqual(err.data, { name: 'c' });
+        }
+    }
+
+    static testFunction() {
+        let evaluator = new Evaluator();
+
+        // cascaded function
+        assert.equal(evaluator.fromString('(mul 2 (add 3 4))'), 14);
+
+        // incorrent number of parameters
+        try {
+            evaluator.fromString('(add 1)');
+        } catch (err) {
+            assert(err instanceof SyntaxError);
+            assert.equal(err.code, 'INCORRECT_NUMBER_OF_PARAMETERS');
+            assert.deepEqual(err.data, { name: 'add', actual: 1, expect: 2 });
+        }
+
+        // call non-exist function
+        try {
+            evaluator.fromString('(noThisFunction)');
+        } catch (err) {
+            assert(err instanceof EvalError);
+            assert.equal(err.code, 'ID_NOT_FOUND');
+            assert.deepEqual(err.data, { name: 'noThisFunction' });
+        }
+
+        // call a variable
+        try{
+            evaluator.fromString(`(begin
+                (var foo 2)
+                (foo 1 2))`);
+        }catch(err) {
+            assert(err instanceof EvalError);
+            assert.equal(err.code, 'NOT_A_FUNCTION');
+            assert.deepEqual(err.data, { name: 'foo' });
         }
     }
 
