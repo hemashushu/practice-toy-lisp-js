@@ -96,13 +96,13 @@ class TestEvaluator {
     static testVariable() {
         let evaluator = new Evaluator();
 
-        assert.equal(evaluator.fromString('(var a 2)'), 2);
+        assert.equal(evaluator.fromString('(let a 2)'), 2);
         assert.equal(evaluator.fromString('(val a)'), 2)
-        assert.equal(evaluator.fromString('(var b (add 2 3))'), 5);
+        assert.equal(evaluator.fromString('(let b (add 2 3))'), 5);
         assert.equal(evaluator.fromString('(val b)'), 5);
 
         try {
-            evaluator.fromString('(var b 1)');
+            evaluator.fromString('(let b 1)');
         } catch (err) {
             assert(err instanceof ContextError);
             assert.equal(err.code, 'ID_ALREADY_EXIST');
@@ -118,7 +118,7 @@ class TestEvaluator {
         }
     }
 
-    static testFunction() {
+    static testNativeFunction() {
         let evaluator = new Evaluator();
 
         // cascaded function
@@ -143,11 +143,11 @@ class TestEvaluator {
         }
 
         // call a variable
-        try{
+        try {
             evaluator.fromString(`(begin
-                (var foo 2)
+                (let foo 2)
                 (foo 1 2))`);
-        }catch(err) {
+        } catch (err) {
             assert(err instanceof EvalError);
             assert.equal(err.code, 'NOT_A_FUNCTION');
             assert.deepEqual(err.data, { name: 'foo' });
@@ -160,8 +160,8 @@ class TestEvaluator {
         // check the `block` function
         assert.equal(evaluator.fromString(
             `(begin
-                (var a 1)
-                (var b 2)
+                (let a 1)
+                (let b 2)
                 (add a b))`
         ), 3);
 
@@ -175,7 +175,7 @@ class TestEvaluator {
             evaluator.fromString(
                 `(begin
                     (begin
-                        (var i 2))
+                        (let i 2))
                     (val i))`
             );
         } catch (err) {
@@ -187,9 +187,9 @@ class TestEvaluator {
         // lookup parent block variable
         assert.equal(evaluator.fromString(
             `(begin
-                (var m 1)
+                (let m 1)
                 (begin
-                    (var n 2)
+                    (let n 2)
                     (add m n)
                     )
                 )`
@@ -206,7 +206,7 @@ class TestEvaluator {
 
         assert.equal(evaluator.fromString(
             `(begin
-                (var a 61)
+                (let a 61)
                 (if (gt a 90)
                     (val 2)
                     (if (gt a 60)
@@ -218,6 +218,99 @@ class TestEvaluator {
         ), 1)
     }
 
+    static testDefineFunction() {
+        let evaluator = new Evaluator();
+
+        // test define and invoke
+        assert.equal(evaluator.fromString(
+            `(begin
+                (def five () (val 5))
+                (five)
+            )`), 5);
+
+        assert.equal(evaluator.fromString(
+            `(begin
+                (def plusOne (i) (add i 1))
+                (plusOne 2)
+            )`), 3);
+
+        // test closure
+        assert.equal(evaluator.fromString(
+            `(begin
+                (let i 3)
+                (def inc (x) (add i x))
+                (inc 2)
+                )`
+        ), 5);
+
+        // test cascaded closure
+        assert.equal(evaluator.fromString(
+            `(begin
+                (let i 3)
+                (def inc (x) (add i x))
+                (def incAndDouble (y) (begin
+                    (let tmp (inc y))
+                    (mul tmp y)
+                    ))
+                (incAndDouble 2)
+                )`
+        ), 10);
+
+        // test function in function
+        assert.equal(evaluator.fromString(
+            `(begin
+                (def foo (i) (begin
+                    (def bar () (val 3))
+                    (let j (bar))
+                    (add i j)
+                    ))
+                (foo 2)
+                )`
+        ), 5);
+
+        // test function as return value
+        assert.equal(evaluator.fromString(
+            `(begin
+                (def makeInc (much) (begin
+                    (def inc (base) (add base much))
+                    (val inc)
+                    ))
+
+                (let incTwo (makeInc 2))
+                (incTwo 6)
+                )`
+        ), 8);
+
+        // test static function context/environment
+        // 运行环境具有继承关系，但
+        // `inner` 里面的 `c` 应该指向 最外面的 `c`，
+        // 而不是 `outter` 里面定义的 `c`，
+        // 所以程序的结果应该是 4 而不是 9。
+        // 这种特性称为函数的静态上下文/环境。
+        //
+        // 注：
+        // 因为当前规范约定不允许同范围内的同名标识符，所以这个程序
+        // 实际上会引起运行时异常。
+
+        try {
+            evaluator.fromString(
+                `(begin
+                    (let c 4)
+                    (def inner () (val c))
+                    (def outter () (begin
+                        (let c 9)
+                        (inner)
+                        ))
+                    (outter)
+                    )`
+            ); // == 4
+        }catch(err) {
+            assert(err instanceof ContextError);
+            assert.equal(err.code, 'ID_ALREADY_EXIST');
+        }
+
+    }
+
     static testEvaluator() {
         TestEvaluator.testValFunction();
         TestEvaluator.testArithmeticOperatorFunction();
@@ -225,10 +318,11 @@ class TestEvaluator {
         TestEvaluator.testBitwiseOperatorFunction();
         TestEvaluator.testLogicalOperatorFunction();
         TestEvaluator.testMathFunction();
-        TestEvaluator.testFunction();
+        TestEvaluator.testNativeFunction();
         TestEvaluator.testVariable();
         TestEvaluator.testBlock();
         TestEvaluator.testConditionControlFlow();
+        TestEvaluator.testDefineFunction();
         console.log('Evaluator passed');
     }
 }
