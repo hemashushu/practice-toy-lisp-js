@@ -4,9 +4,34 @@ import { Evaluator, EvalError, SyntaxError, ContextError } from "../index.js";
 
 class TestEvaluator {
 
-    static testValFunction() {
+    static testValWithLiteral() {
         let evaluator = new Evaluator();
         assert.equal(evaluator.fromString('(val 123)'), 123);
+    }
+
+    static testVariable() {
+        let evaluator = new Evaluator();
+
+        assert.equal(evaluator.fromString('(let a 2)'), 2);
+        assert.equal(evaluator.fromString('(val a)'), 2)
+        assert.equal(evaluator.fromString('(let b (let x 5))'), 5);
+        assert.equal(evaluator.fromString('(val b)'), 5);
+
+        try {
+            evaluator.fromString('(let b 1)');
+        } catch (err) {
+            assert(err instanceof ContextError);
+            assert.equal(err.code, 'ID_ALREADY_EXIST');
+            assert.deepEqual(err.data, { name: 'b' });
+        }
+
+        try {
+            evaluator.fromString('(val c)');
+        } catch (err) {
+            assert(err instanceof ContextError);
+            assert.equal(err.code, 'ID_NOT_FOUND');
+            assert.deepEqual(err.data, { name: 'c' });
+        }
     }
 
     static testArithmeticOperatorFunction() {
@@ -20,6 +45,10 @@ class TestEvaluator {
         assert.equal(evaluator.fromString('(div -6 2)'), -3);
         assert.equal(evaluator.fromString('(rem 10 4)'), 2);
         assert.equal(evaluator.fromString('(rem -10 4)'), -2);
+
+        // cascaded/combine
+        assert.equal(evaluator.fromString('(mul 2 (add 3 4))'), 14);
+
     }
 
     static testComparisonOperatorFunction() {
@@ -93,36 +122,8 @@ class TestEvaluator {
         assert.equal(evaluator.fromString('(sqrt 9.0)'), 3.0);
     }
 
-    static testVariable() {
+    static testFunctionError() {
         let evaluator = new Evaluator();
-
-        assert.equal(evaluator.fromString('(let a 2)'), 2);
-        assert.equal(evaluator.fromString('(val a)'), 2)
-        assert.equal(evaluator.fromString('(let b (add 2 3))'), 5);
-        assert.equal(evaluator.fromString('(val b)'), 5);
-
-        try {
-            evaluator.fromString('(let b 1)');
-        } catch (err) {
-            assert(err instanceof ContextError);
-            assert.equal(err.code, 'ID_ALREADY_EXIST');
-            assert.deepEqual(err.data, { name: 'b' });
-        }
-
-        try {
-            evaluator.fromString('(val c)');
-        } catch (err) {
-            assert(err instanceof ContextError);
-            assert.equal(err.code, 'ID_NOT_FOUND');
-            assert.deepEqual(err.data, { name: 'c' });
-        }
-    }
-
-    static testNativeFunction() {
-        let evaluator = new Evaluator();
-
-        // cascaded function
-        assert.equal(evaluator.fromString('(mul 2 (add 3 4))'), 14);
 
         // incorrent number of parameters
         try {
@@ -142,11 +143,11 @@ class TestEvaluator {
             assert.deepEqual(err.data, { name: 'noThisFunction' });
         }
 
-        // call a variable
+        // invoke a variable
         try {
-            evaluator.fromString(`(begin
-                (let foo 2)
-                (foo 1 2))`);
+            evaluator.fromString(
+                `(let foo 2)
+                (foo 1 2)`);
         } catch (err) {
             assert(err instanceof EvalError);
             assert.equal(err.code, 'NOT_A_FUNCTION');
@@ -154,29 +155,59 @@ class TestEvaluator {
         }
     }
 
-    static testBlock() {
+    static testDo() {
         let evaluator = new Evaluator();
 
-        // check the `block` function
+        // check block return value
         assert.equal(evaluator.fromString(
-            `(begin
+            `(do 7 8 9)`
+        ), 9)
+
+        // check cascaded block return value
+        assert.equal(evaluator.fromString(
+            `(do (do 8))`
+        ), 8)
+
+        assert.equal(evaluator.fromString(
+            `(do 1 2 3 (do 4 5 6))`
+        ), 6)
+
+        // check multi expressions
+        assert.equal(evaluator.fromString(
+            `(do
+                (let a 1)
+                a
+             )`
+        ), 1);
+
+        assert.equal(evaluator.fromString(
+            `(do
                 (let a 1)
                 (let b 2)
-                (add a b))`
+                (add a b)
+             )`
         ), 3);
 
-        // check the return value of block
+        // lookup parent block variable
         assert.equal(evaluator.fromString(
-            `(val (begin (val 10)))`
-        ), 10);
+            `(do
+                (let m 1)
+                (do
+                    (let n 2)
+                    (add m n)
+                )
+             )`
+        ), 3);
 
         // try lookup child block variable
         try {
             evaluator.fromString(
-                `(begin
-                    (begin
-                        (let i 2))
-                    (val i))`
+                `(do
+                    (do
+                        (let i 2)
+                    )
+                    (val i)
+                 )`
             );
         } catch (err) {
             assert(err instanceof ContextError);
@@ -184,16 +215,22 @@ class TestEvaluator {
             assert.deepEqual(err.data, { name: 'i' });
         }
 
-        // lookup parent block variable
-        assert.equal(evaluator.fromString(
-            `(begin
-                (let m 1)
-                (begin
-                    (let n 2)
-                    (add m n)
-                    )
+        // try lookup another block variable
+        try {
+            evaluator.fromString(
+                `
+                (do
+                    (let i 2)
+                )
+                (do
+                    (val i)
                 )`
-        ), 3);
+            );
+        } catch (err) {
+            assert(err instanceof ContextError);
+            assert.equal(err.code, 'ID_NOT_FOUND');
+            assert.deepEqual(err.data, { name: 'i' });
+        }
 
     }
 
@@ -201,54 +238,89 @@ class TestEvaluator {
         let evaluator = new Evaluator();
 
         assert.equal(evaluator.fromString(
-            `(if (gt 2 1) (val 10) (val 20))`
+            `(if (gt 2 1) 10 20)`
         ), 10);
 
         assert.equal(evaluator.fromString(
-            `(begin
+            `(do
                 (let a 61)
                 (if (gt a 90)
-                    (val 2)
+                    2
                     (if (gt a 60)
-                        (val 1)
-                        (val 0)
+                        1
+                        0
                     )
                 )
              )`
         ), 1)
     }
 
-    static testDefineFunction() {
+    static testLoopControlFlow() {
+        let evaluator = new Evaluator();
+
+        assert.equal(evaluator.fromString(
+            `(do
+                (loop (i) (1)
+                    (if (lt i 10)
+                        (recur (add i 1))
+                        (break i)
+                    )
+                )
+             )`
+        ), 10);
+
+        assert.equal(evaluator.fromString(
+            `(do
+                (loop (i accu) (1 0)
+                    (if (gt i 100)
+                        (break accu)
+                        (do
+                            (let next (add i 1))
+                            (let sum (add accu i))
+                            (recur next sum)
+                        )
+                    )
+                )
+             )`
+        ), 5050);
+    }
+
+    static testUserDefineFunction() {
         let evaluator = new Evaluator();
 
         // test define and invoke
         assert.equal(evaluator.fromString(
-            `(begin
-                (def five () (val 5))
+            `(do
+                (defn five () 5)
                 (five)
             )`), 5);
 
         assert.equal(evaluator.fromString(
-            `(begin
-                (def plusOne (i) (add i 1))
+            `(do
+                (defn five () (val 5))
+                (five)
+            )`), 5);
+
+        assert.equal(evaluator.fromString(
+            `(do
+                (defn plusOne (i) (add i 1))
                 (plusOne 2)
             )`), 3);
 
         // test closure
         assert.equal(evaluator.fromString(
-            `(begin
+            `(do
                 (let i 3)
-                (def inc (x) (add i x))
+                (defn inc (x) (add i x))
                 (inc 2)
                 )`
         ), 5);
 
-        // test cascaded closure
         assert.equal(evaluator.fromString(
-            `(begin
+            `(do
                 (let i 3)
-                (def inc (x) (add i x))
-                (def incAndDouble (y) (begin
+                (defn inc (x) (add i x))
+                (defn incAndDouble (y) (do
                     (let tmp (inc y))
                     (mul tmp y)
                     ))
@@ -256,30 +328,22 @@ class TestEvaluator {
                 )`
         ), 10);
 
-        // test function in function
+        // test function recursion (i.e. call function itself)
+        // 1,2,3,5,8,13,21,34 (result)
+        // 1 2 3 4 5 6  7  8  (index)
         assert.equal(evaluator.fromString(
-            `(begin
-                (def foo (i) (begin
-                    (def bar () (val 3))
-                    (let j (bar))
-                    (add i j)
+            `(do
+                (defn fib (i)
+                    (if (eq i 1)
+                        (val 1)
+                        (if (eq i 2)
+                            (val 2)
+                            (add (fib (sub i 1)) (fib (sub i 2)))
+                        )
                     ))
-                (foo 2)
-                )`
-        ), 5);
-
-        // test function as return value
-        assert.equal(evaluator.fromString(
-            `(begin
-                (def makeInc (much) (begin
-                    (def inc (base) (add base much))
-                    (val inc)
-                    ))
-
-                (let incTwo (makeInc 2))
-                (incTwo 6)
-                )`
-        ), 8);
+                (fib 8)
+            )`
+        ), 34);
 
         // test static function context/environment
         // 运行环境具有继承关系，但
@@ -294,35 +358,142 @@ class TestEvaluator {
 
         try {
             evaluator.fromString(
-                `(begin
+                `(do
                     (let c 4)
-                    (def inner () (val c))
-                    (def outter () (begin
+                    (defn inner () (val c))
+                    (defn outter () (do
                         (let c 9)
                         (inner)
                         ))
                     (outter)
                     )`
             ); // == 4
-        }catch(err) {
+        } catch (err) {
             assert(err instanceof ContextError);
             assert.equal(err.code, 'ID_ALREADY_EXIST');
         }
 
     }
 
+    static testAnonymousFunction() {
+        let evaluator = new Evaluator();
+
+        // test invoke anonymous function directly
+        assert.equal(evaluator.fromString(
+            `((fn (i) (mul i 3)) 9)`
+        ), 27);
+
+        // test assign an anonymous function to a variable
+        assert.equal(evaluator.fromString(
+            `(do
+                (let f (fn (i) (mul i 3)))
+                (f 7)
+             )`
+        ), 21);
+
+        // 在普通函数里定义匿名函数
+        assert.equal(evaluator.fromString(
+            `(do
+                (defn foo (i) (do
+                    (let bar (fn () 3))
+                    (add i (bar))
+                    ))
+                (foo 2)
+                )`
+        ), 5);
+
+        // test anonymous function as return value
+        assert.equal(evaluator.fromString(
+            `(do
+                (defn makeInc
+                    (much)
+                    (fn (base) (add base much))
+                )
+
+                (let incTwo (makeInc 2))
+                (incTwo 6)
+                )`
+        ), 8);
+
+        // test anonymous function as arg
+        assert.equal(evaluator.fromString(
+            `(do
+                (defn execFun
+                    (i f)
+                    (f i)
+                )
+                (execFun
+                    3
+                    (fn (i) (mul i 2))
+                )
+             )`
+        ), 6);
+
+        // test loop by anonymous function recursion
+        assert.equal(evaluator.fromString(
+            `(do
+                (defn accumulate (count) (do
+                    (defn internalLoop (i result)
+                        (if (eq i 0)
+                            (val result)
+                            (internalLoop (sub i 1) (add i result))
+                        )
+                    )
+                    (internalLoop count 0))
+                )
+                (accumulate 100)
+            )`
+        ), 5050);
+
+    }
+
+    static testRecursionFunction() {
+        let evaluator = new Evaluator();
+
+        assert.equal(evaluator.fromString(
+            `(do
+                (defnr countToTen (i)
+                    (if (lt i 10)
+                        (recur (add i 1))
+                        (break i)
+                    )
+                )
+                (countToTen 1)
+             )`
+        ), 10);
+
+        assert.equal(evaluator.fromString(
+            `(do
+                (defnr sumToOneHundred (i accu)
+                    (if (gt i 100)
+                        (break accu)
+                        (do
+                            (let next (add i 1))
+                            (let sum (add accu i))
+                            (recur next sum)
+                        )
+                    )
+                )
+                (sumToOneHundred 1 0)
+             )`
+        ), 5050);
+    }
+
     static testEvaluator() {
-        TestEvaluator.testValFunction();
+        TestEvaluator.testValWithLiteral();
+        TestEvaluator.testVariable();
         TestEvaluator.testArithmeticOperatorFunction();
         TestEvaluator.testComparisonOperatorFunction();
         TestEvaluator.testBitwiseOperatorFunction();
         TestEvaluator.testLogicalOperatorFunction();
         TestEvaluator.testMathFunction();
-        TestEvaluator.testNativeFunction();
-        TestEvaluator.testVariable();
-        TestEvaluator.testBlock();
+        TestEvaluator.testFunctionError();
+        TestEvaluator.testDo();
         TestEvaluator.testConditionControlFlow();
-        TestEvaluator.testDefineFunction();
+        TestEvaluator.testLoopControlFlow();
+        TestEvaluator.testUserDefineFunction();
+        TestEvaluator.testAnonymousFunction();
+        TestEvaluator.testRecursionFunction();
         console.log('Evaluator passed');
     }
 }
