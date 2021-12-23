@@ -1,25 +1,59 @@
 import { SLex } from './s-lex.js';
 import { SParser } from './s-parser.js';
-import { Context } from './context.js';
+
 import { EvalError } from './evalerror.js';
+import { SyntaxError } from './syntexerror.js';
+import { IdentifierError } from './identifiererror.js';
+
 import { UserDefineFunction } from './user-define-function.js';
 import { AnonymousFunction } from './anonymous-function.js';
 import { RecursionFunction } from './recursion-function.js';
 
-class SyntaxError extends EvalError { };
+import { Environment } from './environment.js';
+import { AbstractContext } from './abstractcontext.js';
+import { Namespace } from './namespace.js';
+import { Scope } from './scope.js';
 
 class Evaluator {
     constructor() {
-        let context = new Context();
-        this.addNativeFunctions(context);
+        let environment = new Environment();
+        Evaluator.addNativeFunctionNamespace(environment);
+        Evaluator.addBuiltinFunctionNamespace(environment)
 
-        this.globalContext = context;
+        this.defaultNamespace = Evaluator.addDefaultNamespace(environment);
+        this.environment = environment;
     }
 
-    fromString(exp) {
-        let tokens = SLex.fromString(exp);
+    /**
+     * 加载一个模块的文本代码
+     *
+     * - 支持 `use` 语句
+     * - 支持相对路径
+     *
+     * @param {*} text
+     */
+    loadModuleFromString(moduleName, text) {
+        let tokens = SLex.fromString(text);
         let list = SParser.parse(tokens);
-        return this.eval(list, this.globalContext);
+        // TODO::
+        // 处理 `use` 表达式
+    }
+
+    /**
+     * 解析一条表达式的文本，并执行，然后返回表达式的值
+     *
+     * - 不支持 `use` 语句
+     * - 不支持相对路径
+     *
+     * 环境处于默认命名空间 `user` 里。
+     *
+     * @param {*} singleExpText
+     * @returns
+     */
+    evalFromString(singleExpText) {
+        let tokens = SLex.fromString(singleExpText);
+        let list = SParser.parse(tokens);
+        return this.eval(list, this.defaultNamespace);
     }
 
     /**
@@ -46,37 +80,93 @@ class Evaluator {
         // foo
         // filter
         if (Evaluator.isIdentifier(exp)) {
-            return context.get(exp);
+            return this.getIdentifier(exp, context);
         }
 
         // 表达式的第一个元素，一般是函数名称或者关键字
         let op = exp[0];
 
-        // 求值函数
-        // 返回值：标识符或者字面量的值
-        //
-        // 语法：
-        // - (val identifier)
-        // - (val literal)
-        if (op === 'val') {
-            Evaluator.assertNumberOfParameters('val', exp.length - 1, 1);
-            return this.eval(exp[1], context);
-        }
-
-        // 定义标识符
+        // 定义常量
         // 返回值：标识符的值
         //
         // 语法：
-        // (let identifier-name value)
-        if (op === 'let') {
-            Evaluator.assertNumberOfParameters('let', exp.length - 1, 2);
+        // (const identifier-name value)
+        //
+        // 常量仅可以在 namespace 里定义
+        if (op === 'const') {
+            Evaluator.assertNumberOfParameters('const', exp.length - 1, 2);
+
+            if (!(context instanceof Namespace)) {
+                throw new SyntaxError(
+                    'INVALID_CONST_EXPRESSION_PLACE',
+                    {},
+                    'Const expressions can only be defined in namespaces');
+            }
+
             let [_, name, value] = exp;
-            return context.define(
+            return context.defineIdentifier(
                 name,
                 this.eval(value, context));
         }
 
-        // 语句块表达式
+        // 定义局部标识符（局部变量）
+        // 返回值：标识符的值
+        //
+        // 语法：
+        // (let identifier-name value)
+        //
+        // 变量只可以在 scope 里定义
+        if (op === 'let') {
+            Evaluator.assertNumberOfParameters('let', exp.length - 1, 2);
+
+            if (!(context instanceof Scope)) {
+                throw new SyntaxError(
+                    'INVALID_LET_EXPRESSION_PLACE',
+                    {},
+                    'Let expressions can only be defined in scopes');
+            }
+
+            let [_, name, value] = exp;
+            return context.defineIdentifier(
+                name,
+                this.eval(value, context));
+        }
+
+        if (op === 'set') {
+            Evaluator.assertNumberOfParameters('set', exp.length - 1, 2);
+
+            if (!(context instanceof Scope)) {
+                throw new SyntaxError(
+                    'INVALID_SET_EXPRESSION_PLACE',
+                    {},
+                    'Set expressions can only be used in scopes');
+            }
+
+            let [_, name, value] = exp;
+            return context.assignIdentifier(
+                name,
+                this.eval(value, context));
+        }
+
+        // 命名空间表达式
+        // 返回值：命名空间的 namespace 对象
+        //
+        // 语法：
+        // (namespace name
+        //      (...)
+        //      (...)
+        // )
+        if (op === 'namespace') {
+            // 为 namespace 创建一个单独的上下文
+            // 如此一来平行的多个命名空间就可以不相互影响
+            let [_, namePath, exps] = exp;
+
+            const childContext = this.environment.createNamespace(namePath);
+            return this.evalExps(exps, childContext);
+        }
+
+
+        // 表达式块
         // 返回值：最后一个表达式的值
         //
         // 语法：
@@ -87,7 +177,7 @@ class Evaluator {
         if (op === 'do') {
             // 为语句块创建一个单独的作用域，
             // 如此一来平行的多个语句块就可以不相互影响
-            const childContext = new Context(context);
+            const childContext = new Scope(context);
             let exps = exp.slice(1);
             return this.evalExps(exps, childContext);
         }
@@ -100,8 +190,8 @@ class Evaluator {
         if (op === 'if') {
             Evaluator.assertNumberOfParameters('if', exp.length - 1, 3);
             let [_, condition, trueExp, falseExp] = exp;
-            // 约定以整数 -1 作为逻辑 true
-            if (this.eval(condition, context) === -1) {
+            // 约定以整数 1 作为逻辑 true
+            if (this.eval(condition, context) === 1) {
                 return this.eval(trueExp, context);
             } else {
                 return this.eval(falseExp, context);
@@ -133,6 +223,7 @@ class Evaluator {
         // * `break` 和 `recur` 只能存在 `defnr` 和 `loop` 表达式之内的最后一句，在加载源码时会有语法检查。
         // * 如果循环主体里有 `if` 分支表达式，需要确保每一个分支的最后一句
         //   必须是 `recur` 或者 `break`，在加载源码时会有语法检查。；
+        // * 循环表达式隐含地创建了一个自己的作用域
         //
         // `loop...recur` 语句借鉴了 Clojure loop 语句 (https://clojuredocs.org/clojure.core/loop)
         // 不过因为 Clojure 是用户级语言，它在非循环分支里不需要明写类似 break 的语句。
@@ -171,14 +262,22 @@ class Evaluator {
         // 语法：
         // (defn name (param1 param2 ...) (...))
         //
-        // 注意 `defn` 只能写在 `namespace` 直接的第一层里，这个加载代码是
-        // 会进行语法检查。
+        // * 用户自定义函数只能在 namespace 里定义
+        // * 用户自定义函数隐含地创建了自己的作用域
 
         if (op === 'defn') {
             Evaluator.assertNumberOfParameters('defn', exp.length - 1, 3);
+
+            if (!(context instanceof Namespace)) {
+                throw new SyntaxError(
+                    'INVALID_DEFN_EXPRESSION_PLACE',
+                    {},
+                    'Defn expressions can only be defined in namespaces');
+            }
+
             let [_, name, parameters, bodyExp] = exp;
 
-            // 因为闭包（closure）的需要，函数对象需要包含当前的上下文/环境
+            // 因为闭包（closure）的需要，函数对象需要包含当前的上下文
             let userDefineFunc = new UserDefineFunction(
                 name,
                 parameters,
@@ -186,7 +285,7 @@ class Evaluator {
                 context
             );
 
-            return context.define(name, userDefineFunc);
+            return context.defineIdentifier(name, userDefineFunc);
         }
 
         // 含有递归调用的用户自定义函数
@@ -194,18 +293,27 @@ class Evaluator {
         // 语法:
         // (defnr name (param1 param2 ...) (...))
         //
-        // 注意 `defnr` 只能写在 `namespace` 直接的第一层里，这个加载代码是
-        // 会进行语法检查。
-        //
         // `defnr` 表达式的结构跟 `loop` 一样，即：
         // - 函数的最后一句必须是 `break` 或者 `recur`
         // - 如果函数有多个分支，必须保证每个分支的最后一句必须是 `break` 或者 `recur`，
         //   在加载源码时会有语法检查。
+        //
+        // * 用户自定义函数只能在 namespace 里定义
+        // * 用户自定义函数隐含地创建了自己的作用域
+
         if (op === 'defnr') {
             Evaluator.assertNumberOfParameters('defnr', exp.length - 1, 3);
+
+            if (!(context instanceof Namespace)) {
+                throw new SyntaxError(
+                    'INVALID_DEFN_EXPRESSION_PLACE',
+                    {},
+                    'Defnr expressions can only be defined in namespaces');
+            }
+
             let [_, name, parameters, bodyExp] = exp;
 
-            // 因为闭包（closure）的需要，函数对象需要包含当前的上下文/环境
+            // 因为闭包（closure）的需要，函数对象需要包含当前的上下文
             let recursionFunction = new RecursionFunction(
                 name,
                 parameters,
@@ -213,7 +321,7 @@ class Evaluator {
                 context
             );
 
-            return context.define(name, recursionFunction);
+            return context.defineIdentifier(name, recursionFunction);
         }
 
         // 匿名函数（即所谓 Lambda）
@@ -221,11 +329,13 @@ class Evaluator {
         //
         // 语法：
         // (fn (param1 param2 ...) (...))
+        //
+        // * 匿名函数隐含地创建了自己的作用域
         if (op === 'fn') {
             Evaluator.assertNumberOfParameters('fn', exp.length - 1, 2);
             let [_, parameters, bodyExp] = exp;
 
-            // 因为闭包（closure）的需要，函数对象需要包含当前的上下文/环境
+            // 因为闭包（closure）的需要，函数对象需要包含当前的上下文
             let anonymousFunc = new AnonymousFunction(
                 parameters,
                 bodyExp,
@@ -252,24 +362,24 @@ class Evaluator {
 
             } else if (opValue instanceof UserDefineFunction) { // 用户定义函数
                 let args = exp.slice(1);
-                let {name, parameters, bodyExp, context: functionContext } = opValue;
+                let { name, parameters, bodyExp, context: functionContext } = opValue;
                 return this.evalFunction(name, bodyExp, parameters, args, functionContext, context);
 
-            }else if (opValue instanceof AnonymousFunction) { // 匿名函数
+            } else if (opValue instanceof AnonymousFunction) { // 匿名函数
                 let args = exp.slice(1);
-                let {parameters, bodyExp, context: functionContext } = opValue;
+                let { parameters, bodyExp, context: functionContext } = opValue;
                 return this.evalFunction('lambda', bodyExp, parameters, args, functionContext, context);
 
             } else if (opValue instanceof RecursionFunction) { // 递归函数
                 let args = exp.slice(1);
-                let {name, parameters, bodyExp, context: functionContext } = opValue;
+                let { name, parameters, bodyExp, context: functionContext } = opValue;
                 return this.evalRecursionFunction(name, bodyExp, parameters, args, functionContext, context);
 
             } else {
                 throw new EvalError(
-                    'NOT_A_FUNCTION',
+                    'IDENTIFIER_NOT_A_FUNCTION',
                     { name: op },
-                    `Not a function: "${op}"`);
+                    `The specified identifier is not a function: "${op}"`);
             }
         }
 
@@ -299,8 +409,8 @@ class Evaluator {
         while (true) {
             Evaluator.assertNumberOfLoopArgs(parameters.length, args.length);
 
-            // 为循环块创建一个单独的作用域
-            const childContext = new Context(context);
+            // 循环表达式隐含地创建了一个自己的作用域
+            const childContext = new Scope(context);
 
             // 添加实参
             parameters.forEach((name, idx) => {
@@ -323,9 +433,6 @@ class Evaluator {
                 // 语句已经求值了各个参数，所以这里不需要再次求值。
                 return result[1];
 
-                // let returnValue = this.eval(result[1], childContext);
-                // return returnValue;
-
             } else {
                 // recur the loop
                 // update the args and run the loop body again
@@ -333,11 +440,6 @@ class Evaluator {
                 // 因为语法规定返回值必须由 `break` 或者 `recur` 语句构建，而这两个
                 // 语句已经求值了各个参数，所以这里不需要再次求值。
                 args = result.slice(1);
-
-                // let newArgs = result.slice(1);
-                // args = newArgs.map(arg => {
-                //     return this.eval(arg, childContext);
-                // });
             }
         }
     }
@@ -345,10 +447,10 @@ class Evaluator {
     evalFunction(name, exp, parameters, args, functionContext, context) {
         Evaluator.assertNumberOfParameters(name, args.length, parameters.length);
 
-        // 创建函数自己的上下文/环境
-        let activationContext = new Context(
+        // 函数隐含地创建了一个自己的作用域
+        let activationContext = new Scope(
             //context // 动态环境，函数内的外部变量的值会从调用栈开始层层往上查找
-            functionContext // 静态环境，函数内的外部变量的值只跟定义该函数时的上下文/环境有关
+            functionContext // 静态环境，函数内的外部变量的值只跟定义该函数时的上下文有关
         )
 
         // 添加实参
@@ -391,205 +493,424 @@ class Evaluator {
         }
     }
 
-    addNativeFunctions(context) {
+    /**
+     * 创建 `native` 命名空间，并加入虚拟机直接支持的指令
+     * 函数名称保持与 WASM VM 指令名称一致
+     *
+     * 对于 i64/i32/f32/f64 各个数据类型都有它们对应的子命名空间：
+     *
+     * - native.i64.add 是 i64 加法
+     * - native.i32.add 是 i32 加法
+     * - native.f32.add 是 f32 加法
+     * - native.f64.add 是 f64 加法
+     *
+     */
+    static addNativeFunctionNamespace(environment) {
+
         /**
-         * 内置函数
-         * 保持与 WASM VM 函数一致
+         * i64 算术运算
          *
-         * 整数算术运算，只实现了 i64（未实现 i32）
-         * - add 加，返回 i64
-         * - sub 减，返回 i64
-         * - mul 乘，返回 i64
-         * - div 除，返回 i64
-         * - div_u 无符号除，返回 i64（未实现）
-         * - rem 余，返回 i64
-         * - rem_u 无符号余，返回 i64（未实现）
+         * - add 加
+         * - sub 减
+         * - mul 乘
+         * - div_s 除
+         * - div_u 无符号除
+         * - rem_s 余
+         * - rem_u 无符号余
          *
-         * 浮点算术运算（未实现 f64，未实现 f32）
-         * - f64.add 加，返回 f64
-         * - f64.sub 减，返回 f64
-         * - f64.mul 乘，返回 f64
-         * - f64.div 除，返回 f64
+         * i64 位运算
          *
-         * 整数比较运算（未实现 i32）
-         * - eq 等于，返回 0/-1，
-         * - neq 不等于，返回 0/-1
-         * - gt 大于，返回 0/-1
-         * - gt_u 无符号大于，返回 0/-1（未实现）
-         * - gte 大于等于，返回 0/-1
-         * - gte_u 无符号大于等于，返回 0/-1（未实现）
-         * - lt 小于，返回 0/-1
-         * - lt_u 无符号小于，返回 0/-1（未实现）
-         * - lte 小于等于，返回 0/-1
-         * - lte_u 无符号小于等于，返回 0/-1（未实现）
+         * - and 位与
+         * - or 位或
+         * - xor 位异或
+         * - shl 位左移
+         * - shr_s 位右移
+         * - shr_u 逻辑位右移
          *
-         * 浮点数比较运算（未实现 f64，未实现 f32）
-         * - f64.eq 等于，返回 0/-1
-         * - f64.neq 不等于，返回 0/-1
-         * - f64.gt 大于，返回 0/-1
-         * - f64.gte 大于等于，返回 0/-1
-         * - f64.lt 小于，返回 0/-1
-         * - f64.lte 小于等于，返回 0/-1
-         *
-         * 位运算
-         * - bit_and 位与
-         * - bit_or 位或
-         * - bit_xor 位异或
-         * - bit_not 位非
-         * - shift_left 位左移
-         * - shift_right 位右移
-         * - shift_right_u 逻辑位右移
-         *
-         * 逻辑运算
-         * 约定 0 为 false，-1 为 true，内部使用位运算实现。
-         * - and 逻辑与，返回 0/-1
-         * - or 逻辑或，返回 0/-1
-         * - not 逻辑非，返回 0/-1
+         * i64 比较运算，条件成立返回 1，不成立返回 0
+         * - eq 等于，返回 0/1
+         * - ne 不等于，返回 0/1
+         * - lt_s 小于，返回 0/1
+         * - lt_u 无符号小于，返回 0/1
+         * - gt_s 大于，返回 0/1
+         * - gt_u 无符号大于，返回 0/1
+         * - le_s 小于等于，返回 0/1
+         * - le_u 无符号小于等于，返回 0/1
+         * - ge_s 大于等于，返回 0/1
+         * - ge_u 无符号大于等于，返回 0/1
          *
          */
 
-        context.define('add', (lh, rh) => {
+        let nsi64 = environment.createNamespace('native.i64');
+
+        // 算术运算
+
+        nsi64.defineIdentifier('add', (lh, rh) => {
             return lh + rh;
         });
 
-        context.define('sub', (lh, rh) => {
+        nsi64.defineIdentifier('sub', (lh, rh) => {
             return lh - rh;
         });
 
-        context.define('mul', (lh, rh) => {
+        nsi64.defineIdentifier('mul', (lh, rh) => {
             return lh * rh;
         });
 
-        context.define('div', (lh, rh) => {
+        nsi64.defineIdentifier('div_s', (lh, rh) => {
             return lh / rh;
         });
 
-        context.define('rem', (lh, rh) => {
+        nsi64.defineIdentifier('div_u', (lh, rh) => {
+            // not implement yet
+            throw new EvalError('NOT_IMPLEMENT');
+        });
+
+        nsi64.defineIdentifier('rem_s', (lh, rh) => {
             return lh % rh;
         });
 
-        context.define('eq', (lh, rh) => {
-            return lh === rh ? -1 : 0;
-        });
-
-        context.define('neq', (lh, rh) => {
-            return lh !== rh ? -1 : 0;
-        });
-
-        context.define('gt', (lh, rh) => {
-            return lh > rh ? -1 : 0;
-        });
-
-        context.define('gte', (lh, rh) => {
-            return lh >= rh ? -1 : 0;
-        });
-
-        context.define('lt', (lh, rh) => {
-            return lh < rh ? -1 : 0;
-        });
-
-        context.define('lte', (lh, rh) => {
-            return lh <= rh ? -1 : 0;
+        nsi64.defineIdentifier('rem_u', (lh, rh) => {
+            // not implement yet
+            throw new EvalError('NOT_IMPLEMENT');
         });
 
         // 位运算
 
-        context.define('bit_and', (lh, rh) => {
+        nsi64.defineIdentifier('and', (lh, rh) => {
             return lh & rh;
         });
 
-        context.define('bit_or', (lh, rh) => {
+        nsi64.defineIdentifier('or', (lh, rh) => {
             return lh | rh;
         });
 
-        context.define('bit_xor', (lh, rh) => {
+        nsi64.defineIdentifier('xor', (lh, rh) => {
             return lh ^ rh;
         });
 
-        context.define('bit_not', (val) => {
-            return ~val;
-        });
-
-        context.define('shift_left', (lh, rh) => {
+        nsi64.defineIdentifier('shl', (lh, rh) => {
             return lh << rh;
         });
 
-        context.define('shift_right', (lh, rh) => {
+        nsi64.defineIdentifier('shr_s', (lh, rh) => {
             return lh >> rh;
         });
 
-        context.define('shift_right_u', (lh, rh) => {
+        nsi64.defineIdentifier('shr_u', (lh, rh) => {
             return lh >>> rh;
         });
 
-        // 逻辑运算
+        // 比较运算
 
-        context.define('and', (lh, rh) => {
-            return (lh & rh) !== 0 ? -1 : 0;
+        nsi64.defineIdentifier('eq', (lh, rh) => {
+            return lh === rh ? 1 : 0;
         });
 
-        context.define('or', (lh, rh) => {
-            return (lh | rh) === 0 ? 0 : -1;
+        nsi64.defineIdentifier('ne', (lh, rh) => {
+            return lh !== rh ? 1 : 0;
         });
 
-        context.define('not', (val) => {
-            return val === 0 ? -1 : 0;
+        nsi64.defineIdentifier('lt_s', (lh, rh) => {
+            return lh < rh ? 1 : 0;
+        });
+
+        nsi64.defineIdentifier('lt_u', (lh, rh) => {
+            // not implement yet
+            throw new EvalError('NOT_IMPLEMENT');
+        });
+
+        nsi64.defineIdentifier('gt_s', (lh, rh) => {
+            return lh > rh ? 1 : 0;
+        });
+
+        nsi64.defineIdentifier('gt_u', (lh, rh) => {
+            // not implement yet
+            throw new EvalError('NOT_IMPLEMENT');
+        });
+
+        nsi64.defineIdentifier('le_s', (lh, rh) => {
+            return lh <= rh ? 1 : 0;
+        });
+
+        nsi64.defineIdentifier('le_u', (lh, rh) => {
+            // not implement yet
+            throw new EvalError('NOT_IMPLEMENT');
+        });
+
+        nsi64.defineIdentifier('ge_s', (lh, rh) => {
+            return lh >= rh ? 1 : 0;
+        });
+
+        nsi64.defineIdentifier('ge_u', (lh, rh) => {
+            // not implement yet
+            throw new EvalError('NOT_IMPLEMENT');
         });
 
         /**
-         * 浮点数常用数学函数（f32 未实现）
-         * 整数无此类运算
+         * i32 算术运算
          *
+         * - add 加
+         * - sub 减
+         * - mul 乘
+         * - div_s 除
+         * - div_u 无符号除
+         * - rem_s 余
+         * - rem_u 无符号余
+         *
+         * i32 位运算
+         *
+         * - and 位与
+         * - or 位或
+         * - xor 位异或
+         * - shl 位左移
+         * - shr_s 位右移
+         * - shr_u 逻辑位右移
+         *
+         * i32 比较运算，条件成立返回 1，不成立返回 0
+         * - eq 等于，返回 0/1
+         * - ne 不等于，返回 0/1
+         * - lt_s 小于，返回 0/1
+         * - lt_u 无符号小于，返回 0/1
+         * - gt_s 大于，返回 0/1
+         * - gt_u 无符号大于，返回 0/1
+         * - le_s 小于等于，返回 0/1
+         * - le_u 无符号小于等于，返回 0/1
+         * - ge_s 大于等于，返回 0/1
+         * - ge_u 无符号大于等于，返回 0/1
+         *
+         */
+
+        let nsi32 = environment.createNamespace('native.i32');
+        // TODO:: nsi32 全部都未实现
+
+        /**
+         * f64 算术运算
+         * - add 加
+         * - sub 减
+         * - mul 乘
+         * - div 除
+         *
+         * f64 比较运算
+         * - eq 等于，返回 0/1
+         * - ne 不等于，返回 0/1
+         * - lt 小于，返回 0/1
+         * - gt 大于，返回 0/1
+         * - le 小于等于，返回 0/1
+         * - ge 大于等于，返回 0/1
+         *
+         * f64 数学函数
          * - abs 绝对值
          * - neg 取反
          * - ceil 向上取整
          * - floor 向下取整
          * - trunc 截断取整
-         * - round 就近取整（对应 WASM VM 的 nearest 函数）
+         * - nearest 就近取整（对应一般数学函数 round）
          * - sqrt 平方根
          */
 
-        context.define('abs', (val) => {
+        let nsf64 = environment.createNamespace('native.f64');
+
+        // 算术运算
+
+        nsf64.defineIdentifier('add', (lh, rh) => {
+            return lh + rh;
+        });
+
+        nsf64.defineIdentifier('sub', (lh, rh) => {
+            return lh - rh;
+        });
+
+        nsf64.defineIdentifier('mul', (lh, rh) => {
+            return lh * rh;
+        });
+
+        nsf64.defineIdentifier('div', (lh, rh) => {
+            return lh / rh;
+        });
+
+        // 比较运算
+
+        nsf64.defineIdentifier('eq', (lh, rh) => {
+            return lh === rh ? 1 : 0;
+        });
+
+        nsf64.defineIdentifier('ne', (lh, rh) => {
+            return lh !== rh ? 1 : 0;
+        });
+
+        nsf64.defineIdentifier('lt', (lh, rh) => {
+            return lh < rh ? 1 : 0;
+        });
+
+        nsf64.defineIdentifier('gt', (lh, rh) => {
+            return lh > rh ? 1 : 0;
+        });
+
+        nsf64.defineIdentifier('le', (lh, rh) => {
+            return lh <= rh ? 1 : 0;
+        });
+
+        nsf64.defineIdentifier('ge', (lh, rh) => {
+            return lh >= rh ? 1 : 0;
+        });
+
+        // 数学函数
+
+        nsi64.defineIdentifier('abs', (val) => {
             return Math.abs(val);
         });
 
-        context.define('neg', (val) => {
+        nsi64.defineIdentifier('neg', (val) => {
             return -val;
         });
 
-        context.define('ceil', (val) => {
+        nsi64.defineIdentifier('ceil', (val) => {
             return Math.ceil(val);
         });
 
-        context.define('floor', (val) => {
+        nsi64.defineIdentifier('floor', (val) => {
             return Math.floor(val);
         });
 
-        context.define('trunc', (val) => {
+        nsi64.defineIdentifier('trunc', (val) => {
             return Math.trunc(val);
         });
 
-        context.define('round', (val) => {
+        nsi64.defineIdentifier('nearest', (val) => {
             return Math.round(val);
         });
 
-        context.define('sqrt', (val) => {
+        nsi64.defineIdentifier('sqrt', (val) => {
             return Math.sqrt(val);
         });
 
         /**
-         * 整数(i32, i64)之间转换、浮点数（f32, f64）之间转换，
-         * 以及整数(i32, i64)与浮点数（f32, f64）之间转换的函数大致有：
+         * f32 算术运算
+         * - add 加
+         * - sub 减
+         * - mul 乘
+         * - div 除
          *
-         * - 整数截断 conv_wrap
-         * - 整数提升 conv_extend
-         * - 浮点数精度下降 conv_demote
-         * - 浮点数精度提升 conv_promote
-         * - 浮点转整数 conv_trunc
-         * - 整数转浮点 conv_convert
+         * f32 比较运算
+         * - eq 等于，返回 0/1
+         * - ne 不等于，返回 0/1
+         * - lt 小于，返回 0/1
+         * - gt 大于，返回 0/1
+         * - le 小于等于，返回 0/1
+         * - ge 大于等于，返回 0/1
          *
-         * （i32, i64，f32, f64 均未实现）
+         * f32 数学函数
+         * - abs 绝对值
+         * - neg 取反
+         * - ceil 向上取整
+         * - floor 向下取整
+         * - trunc 截断取整
+         * - nearest 就近取整（对应一般数学函数 round）
+         * - sqrt 平方根
          */
+
+        let nsf32 = environment.createNamespace('native.f32');
+        // TODO:: nsf32 全部都未实现
+
+        /**
+         * - 整数(i32, i64)之间转换
+         * - 浮点数（f32, f64）之间转换
+         * - 整数(i32, i64)与浮点数（f32, f64）之间转换
+         *
+         * 部分函数
+         *
+         * - 整数提升
+         *   + i64.extend_i32_s(i32) -> i64
+         *   + i64.extend_i32_u(i32) -> i64
+         * - 整数截断
+         *   + i32.wrap(i64) -> i32
+         *
+         * - 浮点数精度提升
+         *   + f64.promote(f32) -> f32
+         *
+         * - 浮点数精度下降
+         *   + f32.demote(f64) -> f32
+         *
+         * - 浮点转整数
+         *   + i32.trunc_f32_s (f32) -> i32
+         *   + i32.trunc_f32_u (f32) -> i32
+         *   + i64.trunc_f32_s (f32) -> i64
+         *   + i64.trunc_f32_u (f32) -> i64
+         *
+         *   + i32.trunc_f64_s (f64) -> i32
+         *   + i32.trunc_f64_u (f64) -> i32
+         *   + i64.trunc_f64_s (f64) -> i64
+         *   + i64.trunc_f64_u (f64) -> i64
+         *
+         * - 整数转浮点
+         *   + f32.convert_i32_s (i32) -> f32
+         *   + f32.convert_i32_u (i32) -> f32
+         *   + f64.convert_i32_s (i32) -> f64
+         *   + f64.convert_i32_u (i32) -> f64
+         *
+         *   + f32.convert_i64_s (i64) -> f32
+         *   + f32.convert_i64_u (i64) -> f32
+         *   + f64.convert_i64_s (i64) -> f64
+         *   + f64.convert_i64_u (i64) -> f64
+         *
+         */
+        // TODO:: 全部都未实现
+    }
+
+    /**
+     * 创建 `builtin` 命名空间，并加入内置函数
+     *
+     * @param {*} environment
+     */
+    static addBuiltinFunctionNamespace(environment) {
+
+        let nsbuiltin = environment.createNamespace('builtin');
+
+        // 求值函数
+        // 返回值：标识符或者字面量的值
+        //
+        // 语法：
+        // - (val identifier)
+        // - (val literal)
+        nsbuiltin.defineIdentifier('val', (val) => {
+            return val;
+        });
+
+        /**
+        * 逻辑运算
+        * 约定 0 为 false，1 为 true，内部使用位运算实现。
+        * - and 逻辑与，返回 0/1
+        * - or 逻辑或，返回 0/1
+        * - not 逻辑非，返回 0/1
+        *  */
+
+        // 逻辑运算
+
+        nsbuiltin.defineIdentifier('and', (lh, rh) => {
+            return (lh & rh) !== 0 ? 1 : 0;
+        });
+
+        nsbuiltin.defineIdentifier('or', (lh, rh) => {
+            return (lh | rh) === 0 ? 0 : 1;
+        });
+
+        nsbuiltin.defineIdentifier('not', (val) => {
+            return val === 0 ? 1 : 0;
+        });
+    }
+
+    static addDefaultNamespace(environment) {
+        let namespace = environment.createNamespace('user');
+        return namespace;
+    }
+
+    getIdentifier(identifierNameOrFullName, context) {
+        if (identifierNameOrFullName.indexOf('.') > 0) {
+            return this.environment.getIdentifierByFullName(identifierNameOrFullName);
+        } else {
+            return context.getIdentifier(identifierNameOrFullName);
+        }
     }
 
     static isNumber(element) {
@@ -617,4 +938,4 @@ class Evaluator {
     }
 }
 
-export { SyntaxError, Evaluator };
+export { Evaluator };
