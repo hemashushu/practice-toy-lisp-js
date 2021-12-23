@@ -59,7 +59,7 @@ class SLex {
             }
         }
 
-        return { sSymbol: undefined, restString: str };
+        return { sSymbol: str, restString: '' };
     }
 
     static oneOf(char, array) {

@@ -83,7 +83,7 @@ XiaoXuan IR 源码由 [S-表达式](https://en.wikipedia.org/wiki/S-expression) 
 * 用户自定义函数
   实现一定功能的代码块，一般是将内置函数、组织表达式以及其他自定义函数按照逻辑组合在一起而形成。
 * 基本表达式
-  用于组织源码的表达式，XiaoXuan IR 的基本表达式有 `const`，`let`，`set`，`namespace`，`do`，`if`，`loop`，`break`，`recur`，`defn`，`defnr` 和 `fn`，基本表达式相当于一般高级语言的 "关键字"。
+  用于组织源码的表达式，XiaoXuan IR 的基本表达式有 `const`，`let`，`set`，`namespace`，`do`，`if`，`loop`（及其子表达式 `break` 和 `recur`），`defn`，`defnr` 和 `fn`，基本表达式相当于一般高级语言的 "关键字"。
 
 一个 IR 源文件最顶层只允许一个或多个 `namespace` 表达式，然后在 `namespace` 表达式内只允许 `const`，`defn` 和 `defnr` 3 种表达式，结构如下：
 
@@ -100,7 +100,14 @@ XiaoXuan IR 源码由 [S-表达式](https://en.wikipedia.org/wiki/S-expression) 
 )
 ```
 
-但在 REPL 模式下，在 `namespace` 里还允许直接调用函数的表达式，以及 `do`，`if`，`loop` 等表达式。
+在 REPL 模式下，默认在名为 `user` 的命名空间中，支持直接调用函数的表达式，以及执行：
+
+* `namespace`
+* `do`
+* `if`
+* `loop`（及其子表达式 `break` 和 `recur`）
+
+等表达式，也可以直接对字面量和数值类型的标识符求值。
 
 ## 局部变量定义表达式
 

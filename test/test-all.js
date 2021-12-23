@@ -7,8 +7,9 @@ import { TestEvaluator } from './test-evaluator.js';
 function testAll() {
     // TestJsonLex.testJsonLex();
     // TestJsonParser.testJsonParser();
-    // TestSLex.testSLex();
-    // TestSParser.testSParser();
+
+    TestSLex.testSLex();
+    TestSParser.testSParser();
     TestEvaluator.testEvaluator();
     console.log('All passed.');
 }

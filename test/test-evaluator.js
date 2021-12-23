@@ -8,15 +8,22 @@ import {
 } from "../index.js";
 
 /**
- * Evaluator 实例创建后，默认在 `user` namespace 之中，
- * 测试环境里支持在 `namespace` 里直接调用函数以及执行 `do`，`if`，`loop` 等基本表达式。
+ * Evaluator 实例创建后，默认在 `user` namespace 之中
+ *
+ * 测试环境里支持直接调用函数的表达式，以及
+ * - `namespace`
+ * - `do`
+ * - `if`
+ * - `loop`（及其子表达式 `break` 和 `recur`）
+ * 等表达式，也可以直接对字面量和数值类型的标识符求值。
+ *
  */
 class TestEvaluator {
 
-    static testValWithLiteral() {
+    static testLiteral() {
         let evaluator = new Evaluator();
 
-        assert.equal(evaluator.evalFromString('(builtin.val 123)'), 123);
+        assert.equal(evaluator.evalFromString('123'), 123);
     }
 
     static testArithmeticOperatorFunction() {
@@ -116,9 +123,9 @@ class TestEvaluator {
         let evaluator = new Evaluator();
 
         assert.equal(evaluator.evalFromString('(const a 2)'), 2);
-        assert.equal(evaluator.evalFromString('(builtin.val a)'), 2)
+        assert.equal(evaluator.evalFromString('a'), 2)
         assert.equal(evaluator.evalFromString('(const b 5))'), 5);
-        assert.equal(evaluator.evalFromString('(builtin.val user.b)'), 5); // 默认命名空间是 `user`
+        assert.equal(evaluator.evalFromString('user.b'), 5); // 默认命名空间是 `user`
 
         try {
             evaluator.evalFromString('(const b 1)');
@@ -129,7 +136,7 @@ class TestEvaluator {
         }
 
         try {
-            evaluator.evalFromString('(builtin.val c)');
+            evaluator.evalFromString('c');
         } catch (err) {
             assert(err instanceof IdentifierError);
             assert.equal(err.code, 'IDENTIFIER_NOT_FOUND');
@@ -145,10 +152,10 @@ class TestEvaluator {
         evaluator.evalFromString('(namespace foo (const a 10))');
         evaluator.evalFromString('(namespace foo.bar (const a 100))');
 
-        assert.equal(evaluator.evalFromString('(builtin.val a)'), 1)
-        assert.equal(evaluator.evalFromString('(builtin.val user.a)'), 1)
-        assert.equal(evaluator.evalFromString('(builtin.val foo.a)'), 10)
-        assert.equal(evaluator.evalFromString('(builtin.val foo.bar.a)'), 100)
+        assert.equal(evaluator.evalFromString('a'), 1)
+        assert.equal(evaluator.evalFromString('user.a'), 1)
+        assert.equal(evaluator.evalFromString('foo.a'), 10)
+        assert.equal(evaluator.evalFromString('foo.bar.a'), 100)
     }
 
     static testDo() {
@@ -202,7 +209,7 @@ class TestEvaluator {
                     (do
                         (let i 2)
                     )
-                    (builtin.val i)
+                    i
                  )`
             );
         } catch (err) {
@@ -219,7 +226,7 @@ class TestEvaluator {
                     (let i 2)
                 )
                 (do
-                    (builtin.val i)
+                    i
                 )`
             );
         } catch (err) {
@@ -244,7 +251,7 @@ class TestEvaluator {
             `(do
                 (let a 2)
                 (set a 3)
-                (builtin.val a)
+                a
              )`
         ), 3);
 
@@ -255,7 +262,7 @@ class TestEvaluator {
                 (do
                     (set a 3)
                 )
-                (builtin.val a)
+                a
              )`
         ), 3);
 
@@ -352,7 +359,7 @@ class TestEvaluator {
 
         assert.equal(evaluator.evalFromStringMultiExps(
             `
-            (defn five2 () (builtin.val 5))
+            (defn five2 () (native.i64.add 2 3))
             (five2)`
         ), 5);
 
@@ -387,9 +394,9 @@ class TestEvaluator {
             `
             (defn fib (i)
                 (if (native.i64.eq i 1)
-                    (builtin.val 1)
+                    1
                     (if (native.i64.eq i 2)
-                        (builtin.val 2)
+                        2
                         (native.i64.add (fib (native.i64.sub i 1)) (fib (native.i64.sub i 2)))
                     )
                 )
@@ -462,7 +469,7 @@ class TestEvaluator {
                     (let internalLoop
                         (fn (i result)
                             (if (native.i64.eq i 0)
-                                (builtin.val result)
+                                result
                                 (internalLoop (native.i64.sub i 1) (native.i64.add i result))
                             )
                         )
@@ -540,7 +547,7 @@ class TestEvaluator {
     }
 
     static testEvaluator() {
-        TestEvaluator.testValWithLiteral();
+        TestEvaluator.testLiteral();
 
         TestEvaluator.testArithmeticOperatorFunction();
         TestEvaluator.testBitwiseOperatorFunction();
