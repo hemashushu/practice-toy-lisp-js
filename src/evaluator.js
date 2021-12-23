@@ -20,7 +20,9 @@ class Evaluator {
         Evaluator.addNativeFunctionNamespace(environment);
         Evaluator.addBuiltinFunctionNamespace(environment)
 
+        // 设置 eval() 方法的默认命名空间为 `user`
         this.defaultNamespace = Evaluator.addDefaultNamespace(environment);
+
         this.environment = environment;
     }
 
@@ -45,7 +47,7 @@ class Evaluator {
      * - 不支持 `use` 语句
      * - 不支持相对路径
      *
-     * 环境处于默认命名空间 `user` 里。
+     * 默认命名空间 `user`。
      *
      * @param {*} singleExpText
      * @returns
@@ -54,6 +56,17 @@ class Evaluator {
         let tokens = SLex.fromString(singleExpText);
         let list = SParser.parse(tokens);
         return this.eval(list, this.defaultNamespace);
+    }
+
+    evalFromStringMultiExps(multiExpsText) {
+        let tokens = SLex.fromString('(' + multiExpsText + ')');
+        let lists = SParser.parse(tokens);
+
+        let result;
+        for(let list of lists) {
+            result = this.eval(list, this.defaultNamespace);
+        }
+        return result;
     }
 
     /**
@@ -143,7 +156,7 @@ class Evaluator {
             }
 
             let [_, name, value] = exp;
-            return context.assignIdentifier(
+            return context.updateIdentifierValue(
                 name,
                 this.eval(value, context));
         }
@@ -159,7 +172,7 @@ class Evaluator {
         if (op === 'namespace') {
             // 为 namespace 创建一个单独的上下文
             // 如此一来平行的多个命名空间就可以不相互影响
-            let [_, namePath, exps] = exp;
+            let [_, namePath, ...exps] = exp;
 
             const childContext = this.environment.createNamespace(namePath);
             return this.evalExps(exps, childContext);
@@ -414,7 +427,7 @@ class Evaluator {
 
             // 添加实参
             parameters.forEach((name, idx) => {
-                childContext.define(
+                childContext.defineIdentifier(
                     name,
                     this.eval(args[idx], context));
             });
@@ -455,7 +468,7 @@ class Evaluator {
 
         // 添加实参
         parameters.forEach((name, idx) => {
-            activationContext.define(
+            activationContext.defineIdentifier(
                 name,
                 this.eval(args[idx], context));
         });
@@ -710,78 +723,35 @@ class Evaluator {
          */
 
         let nsf64 = environment.createNamespace('native.f64');
-
-        // 算术运算
-
-        nsf64.defineIdentifier('add', (lh, rh) => {
-            return lh + rh;
-        });
-
-        nsf64.defineIdentifier('sub', (lh, rh) => {
-            return lh - rh;
-        });
-
-        nsf64.defineIdentifier('mul', (lh, rh) => {
-            return lh * rh;
-        });
-
-        nsf64.defineIdentifier('div', (lh, rh) => {
-            return lh / rh;
-        });
-
-        // 比较运算
-
-        nsf64.defineIdentifier('eq', (lh, rh) => {
-            return lh === rh ? 1 : 0;
-        });
-
-        nsf64.defineIdentifier('ne', (lh, rh) => {
-            return lh !== rh ? 1 : 0;
-        });
-
-        nsf64.defineIdentifier('lt', (lh, rh) => {
-            return lh < rh ? 1 : 0;
-        });
-
-        nsf64.defineIdentifier('gt', (lh, rh) => {
-            return lh > rh ? 1 : 0;
-        });
-
-        nsf64.defineIdentifier('le', (lh, rh) => {
-            return lh <= rh ? 1 : 0;
-        });
-
-        nsf64.defineIdentifier('ge', (lh, rh) => {
-            return lh >= rh ? 1 : 0;
-        });
+        // TODO:: 只实现了数学函数部分
 
         // 数学函数
 
-        nsi64.defineIdentifier('abs', (val) => {
+        nsf64.defineIdentifier('abs', (val) => {
             return Math.abs(val);
         });
 
-        nsi64.defineIdentifier('neg', (val) => {
+        nsf64.defineIdentifier('neg', (val) => {
             return -val;
         });
 
-        nsi64.defineIdentifier('ceil', (val) => {
+        nsf64.defineIdentifier('ceil', (val) => {
             return Math.ceil(val);
         });
 
-        nsi64.defineIdentifier('floor', (val) => {
+        nsf64.defineIdentifier('floor', (val) => {
             return Math.floor(val);
         });
 
-        nsi64.defineIdentifier('trunc', (val) => {
+        nsf64.defineIdentifier('trunc', (val) => {
             return Math.trunc(val);
         });
 
-        nsi64.defineIdentifier('nearest', (val) => {
+        nsf64.defineIdentifier('nearest', (val) => {
             return Math.round(val);
         });
 
-        nsi64.defineIdentifier('sqrt', (val) => {
+        nsf64.defineIdentifier('sqrt', (val) => {
             return Math.sqrt(val);
         });
 

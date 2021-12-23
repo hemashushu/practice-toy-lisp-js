@@ -28,13 +28,14 @@ class Scope extends AbstractContext {
      * @param {*} name
      * @param {*} value
      */
-    assignIdentifier(name, value) {
+    updateIdentifierValue(name, value) {
         if (this.identifiers.has(name)) {
-            return this.identifiers.set(name, value);
+            this.identifiers.set(name, value);
+            return value;
 
         }else if (this.parentContext !== null &&
             this.parentContext instanceof Scope) {
-            return this.parentContext.setValue(name, value);
+            return this.parentContext.updateIdentifierValue(name, value);
 
         }else {
             throw new IdentifierError(
