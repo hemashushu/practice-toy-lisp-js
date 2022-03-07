@@ -10,7 +10,7 @@
 const S_LEFT_PAREN = '(';
 const S_RIGHT_PAREN = ')';
 
-const S_KEYWORDS = [
+const S_PARENS = [
     S_LEFT_PAREN,
     S_RIGHT_PAREN,
 ];
@@ -28,13 +28,14 @@ class SLex {
                 continue;
             }
 
-            if (SLex.oneOf(str[0], S_KEYWORDS)) {
+            // '(' or ')'
+            if (SLex.oneOf(str[0], S_PARENS)) {
                 tokens.push(str[0]);
                 str = str.slice(1);
                 continue;
             }
 
-            // s symbol
+            // symbol
             let { sSymbol, restString: restAfterSymbol } = SLex.lexSymbol(str);
             if (sSymbol !== undefined) {
                 tokens.push(sSymbol);
